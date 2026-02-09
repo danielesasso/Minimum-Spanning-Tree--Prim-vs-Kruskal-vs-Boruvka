@@ -5,7 +5,7 @@ import argparse
 import heapq
 import time
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional, Any
 
 from functions import (
     parse_tsplib_tsp,
@@ -21,6 +21,15 @@ def prim_mst(
     adj: Dict[int, List[Tuple[int, int]]],
     start: Optional[int] = None,
 ) -> Tuple[List[MSTEdge], int, Dict[str, int], Dict[int, int]]:
+    """
+    Prim's algorithm using a lazy min-heap.
+
+    Returns:
+      mst_edges: list of (u, v, w)
+      total_weight: sum of weights
+      op_metrics: counters (heap ops etc.)
+      order_added: node -> order in which it was added to MST (start = 0)
+    """
     nodes = list(adj.keys())
     if not nodes:
         return [], 0, {"heap_pushes": 0, "heap_pops": 0, "edges_considered": 0}, {}
@@ -36,25 +45,25 @@ def prim_mst(
     mst_edges: List[MSTEdge] = []
     total_weight = 0
 
-    # For tooltips: order node was added to MST
     order_added: Dict[int, int] = {start: 0}
     next_order = 1
 
     heap: List[Tuple[int, int, int]] = []  # (w, u, v)
 
-    metrics: Dict[str, int] = {
+    op_metrics: Dict[str, int] = {
         "heap_pushes": 0,
         "heap_pops": 0,
         "edges_considered": 0,
     }
 
+    # Initialize heap with edges from start
     for v, w in adj[start]:
         heapq.heappush(heap, (w, start, v))
-        metrics["heap_pushes"] += 1
+        op_metrics["heap_pushes"] += 1
 
     while heap and len(mst_edges) < n - 1:
         w, u, v = heapq.heappop(heap)
-        metrics["heap_pops"] += 1
+        op_metrics["heap_pops"] += 1
 
         if v in in_mst:
             continue
@@ -67,12 +76,12 @@ def prim_mst(
         total_weight += w
 
         for nxt, w2 in adj[v]:
-            metrics["edges_considered"] += 1
+            op_metrics["edges_considered"] += 1
             if nxt not in in_mst:
                 heapq.heappush(heap, (w2, v, nxt))
-                metrics["heap_pushes"] += 1
+                op_metrics["heap_pushes"] += 1
 
-    return mst_edges, total_weight, metrics, order_added
+    return mst_edges, total_weight, op_metrics, order_added
 
 
 def main() -> None:
@@ -90,31 +99,62 @@ def main() -> None:
     tsp_path = Path(args.tsp)
     inst = parse_tsplib_tsp(tsp_path)
 
+    # Build complete weighted graph
     nodes, edges = build_complete_graph_from_coords(inst.coords)
     adj = edges_to_adjacency(nodes, edges)
 
+    n = len(nodes)
+    m = len(edges)
     start_node = args.start if args.start is not None else min(nodes)
 
+    # Run Prim with timing
     t0 = time.perf_counter()
-    mst_edges, total_weight, metrics, order_added = prim_mst(adj, start=start_node)
+    mst_edges, total_weight, op_metrics, order_added = prim_mst(adj, start=start_node)
     t1 = time.perf_counter()
     elapsed_ms = (t1 - t0) * 1000.0
 
-    expected_edges = inst.dimension - 1
-    ok_size = (len(mst_edges) == expected_edges)
+    mst_edge_count = len(mst_edges)
+    expected_edges = n - 1
+    ok_size = (mst_edge_count == expected_edges)
 
+    # Theoretical complexity (typical with heap):
+    # O(m log n) for Prim with a priority queue. With "lazy" heap there can be extra pushes/pops,
+    # but asymptotic bound remains in the same family for dense graphs.
+    complexity = "O(m log n)"
+    # Collect all metrics in one dict (useful later for benchmark CSV)
+    metrics: Dict[str, Any] = {
+        "algorithm": "prim",
+        "instance": inst.name,
+        "edge_weight_type": inst.edge_weight_type,
+        "start_node": start_node,
+        "n": n,
+        "m": m,
+        "time_ms": elapsed_ms,
+        "mst_edges": mst_edge_count,
+        "mst_weight": total_weight,
+        "heap_pushes": op_metrics.get("heap_pushes", 0),
+        "heap_pops": op_metrics.get("heap_pops", 0),
+        "edges_considered": op_metrics.get("edges_considered", 0),
+        "complexity": complexity,
+        "is_valid_size": ok_size,
+    }
+
+    # Print summary
     print("=== Prim (lazy heap) ===")
-    print(f"Instance: {inst.name}")
-    print(f"EDGE_WEIGHT_TYPE: {inst.edge_weight_type}")
-    print(f"Start node: {start_node}")
-    print(f"n={inst.dimension}  m={len(edges)} (complete graph)")
-    print(f"MST edges: {len(mst_edges)} (expected {expected_edges})  ok={ok_size}")
-    print(f"MST total weight: {total_weight}")
-    print(f"Time: {elapsed_ms:.3f} ms")
-    print("Metrics:")
-    for k in ["heap_pushes", "heap_pops", "edges_considered"]:
-        print(f"  {k}: {metrics.get(k, 0)}")
+    print(f"Instance: {metrics['instance']}")
+    print(f"EDGE_WEIGHT_TYPE: {metrics['edge_weight_type']}")
+    print(f"Start node: {metrics['start_node']}")
+    print(f"n={metrics['n']}  m={metrics['m']} (complete graph)")
+    print(f"MST edges: {metrics['mst_edges']} (expected {expected_edges})  ok={metrics['is_valid_size']}")
+    print(f"MST total weight: {metrics['mst_weight']}")
+    print(f"Time: {metrics['time_ms']:.3f} ms")
+    print("Operational metrics:")
+    print(f"  heap_pushes: {metrics['heap_pushes']}")
+    print(f"  heap_pops: {metrics['heap_pops']}")
+    print(f"  edges_considered: {metrics['edges_considered']}")
+    print(f"Theoretical complexity: {metrics['complexity']}")
 
+    # Plotting
     show = (not args.no_show)
 
     if args.plot or args.save_plots:
@@ -135,7 +175,7 @@ def main() -> None:
             mst_edges,
             title=title1,
             start_node=start_node,
-            order_added=order_added,  # <-- qui invece serve
+            order_added=order_added,  # for tooltip (order + path weight)
             save_path=save1,
             show=show if args.plot else False,
         )
