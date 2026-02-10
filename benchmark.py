@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 from typing import Dict, List, Tuple
+import time
 
 import matplotlib.pyplot as plt
 
@@ -238,6 +239,49 @@ class InteractiveMSTComparison:
         plt.show()
 
 
+def show_comparison_barplots(results: Dict, exec_times: Dict[str, float], dataset_name: str) -> None:
+    """Show two barplot figures comparing n_it and execution time."""
+    algo_names = ['prim', 'kruskal', 'boruvka']
+    
+    # Extract n_it values
+    n_its = {algo: results[algo][4] for algo in algo_names}
+    
+    # Create figure with 2 subplots side by side
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+    fig.suptitle(f"{dataset_name} | Algorithm Comparison", fontsize=14)
+    
+    # Barplot 1: n_it
+    colors = ['#1f77b4', '#ff7f0e', '#2ca02c']
+    bars1 = ax1.bar(algo_names, [n_its[a] for a in algo_names], color=colors, alpha=0.7, edgecolor='black')
+    ax1.set_ylabel('Number of Iterations (n_it)', fontsize=11)
+    ax1.set_title('Iterations per Algorithm', fontsize=12)
+    ax1.grid(axis='y', alpha=0.3)
+    
+    # Add value labels on bars
+    for bar in bars1:
+        height = bar.get_height()
+        ax1.text(bar.get_x() + bar.get_width()/2., height,
+                f'{int(height)}',
+                ha='center', va='bottom', fontsize=10, fontweight='bold')
+    
+    # Barplot 2: execution time (in milliseconds)
+    exec_times_ms = {algo: exec_times[algo] * 1000 for algo in algo_names}
+    bars2 = ax2.bar(algo_names, [exec_times_ms[a] for a in algo_names], color=colors, alpha=0.7, edgecolor='black')
+    ax2.set_ylabel('Execution Time (ms)', fontsize=11)
+    ax2.set_title('Execution Time per Algorithm', fontsize=12)
+    ax2.grid(axis='y', alpha=0.3)
+    
+    # Add value labels on bars
+    for bar in bars2:
+        height = bar.get_height()
+        ax2.text(bar.get_x() + bar.get_width()/2., height,
+                f'{height:.2f}ms',
+                ha='center', va='bottom', fontsize=10, fontweight='bold')
+    
+    fig.tight_layout()
+    plt.show()
+
+
 def main():
     parser = argparse.ArgumentParser(description="Interactive MST comparison benchmark.")
     parser.add_argument("--tsp", required=True, help="Path to TSPLIB .tsp file")
@@ -254,9 +298,19 @@ def main():
     # Run all 3 algorithms
     print(f"Running 3 algorithms on {inst.name}...")
     results = {}
+    exec_times = {}
+    
+    t0 = time.perf_counter()
     results['kruskal'] = kruskal_mst(nodes, edges, start_node=start_node, return_steps=True)
+    exec_times['kruskal'] = time.perf_counter() - t0
+    
+    t0 = time.perf_counter()
     results['prim'] = prim_mst(adj, start=start_node, return_steps=True)
+    exec_times['prim'] = time.perf_counter() - t0
+    
+    t0 = time.perf_counter()
     results['boruvka'] = boruvka_mst(nodes, edges, start_node=start_node, return_steps=True)
+    exec_times['boruvka'] = time.perf_counter() - t0
 
     # Print summary
     for algo_name in ['kruskal', 'prim', 'boruvka']:
@@ -265,13 +319,17 @@ def main():
         w = result[1]
         n_it = result[4]
         steps = result[5] if len(result) > 5 else []
-        print(f"  {algo_name}: W={w} | n_it={n_it} | steps={len(steps)}")
+        print(f"  {algo_name}: W={w} | n_it={n_it} | steps={len(steps)} | time={exec_times[algo_name]*1000:.3f}ms")
 
     print(f"\nLaunching interactive viewer...")
 
     # Launch interactive comparison
     visualizer = InteractiveMSTComparison(inst.coords, results, inst.name)
     visualizer.show()
+    
+    # After closing interactive viewer, show comparison barplots
+    print("Showing comparison barplots...")
+    show_comparison_barplots(results, exec_times, inst.name)
 
 
 if __name__ == "__main__":
