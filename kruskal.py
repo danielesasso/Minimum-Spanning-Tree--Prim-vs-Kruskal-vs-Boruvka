@@ -43,7 +43,8 @@ def kruskal_mst(
     nodes: List[int],
     edges: List[MSTEdge],
     start_node: int = 1,
-) -> Tuple[List[MSTEdge], int, Dict[str, int], Dict[int, int], int]:
+    return_steps: bool = False,
+) -> Tuple[List[MSTEdge], int, Dict[str, int], Dict[int, int], int] | Tuple[List[MSTEdge], int, Dict[str, int], Dict[int, int], int, List[List[MSTEdge]]]:
     """
     Kruskal's algorithm.
 
@@ -56,6 +57,7 @@ def kruskal_mst(
     mst_edges: List[MSTEdge] = []
     total_weight = 0
     n_it = 0
+    steps: List[List[MSTEdge]] = []
 
     op_metrics: Dict[str, int] = {
         "find_calls": 0,
@@ -77,6 +79,9 @@ def kruskal_mst(
             mst_edges.append((u, v, w))
             total_weight += w
 
+            # record this accepted edge as a single step
+            steps.append([(u, v, w)])
+
             for node in (u, v):
                 if node not in order_added:
                     order_added[node] = next_order
@@ -85,6 +90,8 @@ def kruskal_mst(
     op_metrics["find_calls"] = uf.find_calls
     op_metrics["union_calls"] = uf.union_calls
 
+    if return_steps:
+        return mst_edges, total_weight, op_metrics, order_added, n_it, steps
     return mst_edges, total_weight, op_metrics, order_added, n_it
 
 

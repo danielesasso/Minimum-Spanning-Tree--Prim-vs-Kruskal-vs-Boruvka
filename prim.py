@@ -20,7 +20,8 @@ MSTEdge = Tuple[int, int, int]  # (u, v, w)
 def prim_mst(
     adj: Dict[int, List[Tuple[int, int]]],
     start: Optional[int] = None,
-) -> Tuple[List[MSTEdge], int, Dict[str, int], Dict[int, int], int]:
+    return_steps: bool = False,
+) -> Tuple[List[MSTEdge], int, Dict[str, int], Dict[int, int], int] | Tuple[List[MSTEdge], int, Dict[str, int], Dict[int, int], int, List[List[MSTEdge]]]:
     """
     Prim's algorithm using a lazy min-heap.
 
@@ -42,6 +43,8 @@ def prim_mst(
 
     mst_edges: List[MSTEdge] = []
     total_weight = 0
+
+    steps: List[List[MSTEdge]] = []
 
     order_added: Dict[int, int] = {start: 0}
     next_order = 1
@@ -67,11 +70,16 @@ def prim_mst(
         mst_edges.append((u, v, w))
         total_weight += w
 
+        # record this accepted edge as a single step
+        steps.append([(u, v, w)])
+
         for nxt, w2 in adj[v]:
             if nxt not in in_mst:
                 heapq.heappush(heap, (w2, v, nxt))
                 op_metrics["heap_pushes"] += 1
 
+    if return_steps:
+        return mst_edges, total_weight, op_metrics, order_added, n_it, steps
     return mst_edges, total_weight, op_metrics, order_added, n_it
 
 
