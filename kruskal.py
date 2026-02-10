@@ -6,8 +6,8 @@ import time
 from pathlib import Path
 from typing import Dict, List, Tuple
 
-from functions import parse_tsplib_tsp, build_complete_graph_from_coords
-from plotting import plot_points_interactive, plot_mst_interactive
+from utils.functions import parse_tsplib_tsp, build_complete_graph_from_coords
+from utils.plotting import plot_points_interactive, plot_mst_interactive
 
 MSTEdge = Tuple[int, int, int]  # (u, v, w)
 

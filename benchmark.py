@@ -14,7 +14,7 @@ try:
 except Exception:
     _HAS_MPLCURSORS = False
 
-from functions import parse_tsplib_tsp, build_complete_graph_from_coords, edges_to_adjacency
+from utils.functions import parse_tsplib_tsp, build_complete_graph_from_coords, edges_to_adjacency
 from kruskal import kruskal_mst
 from prim import prim_mst
 from boruvka import boruvka_mst
