@@ -32,17 +32,24 @@ dataset/
 ```
 
 ---
-Run Prim’s Algorithm
+## Run Algorithm
 
 Run with interactive plots (nodes + MST):
 ```bash
-python -m prim --tsp dataset/st70.tsp --plot
+python -m method --tsp dataset/st70.tsp --plot
 ```
 Save plots without showing them:
 ```bash
-python -m prim --tsp dataset/st70.tsp --save-plots --no-show
+python -m method --tsp dataset/st70.tsp --save-plots --no-show
 ```
 
+---
+## Run Benchmark
+
+Run per dataset:
+```bash
+python benchmark.py --tsp dataset/st70.tsp
+```
 ---
 ## Output
 
