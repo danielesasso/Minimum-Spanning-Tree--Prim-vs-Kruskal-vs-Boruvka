@@ -238,48 +238,292 @@ class InteractiveMSTComparison:
         """Display the interactive viewer."""
         plt.show()
 
+def _has_cycle_in_undirected_graph(n_nodes: int, mst_edges: list[tuple[int, int, int]]) -> bool:
+    """Return True if the edge set contains a cycle (Union-Find check)."""
+    parent = {}
+    rank = {}
 
-def show_comparison_barplots(results: Dict, exec_times: Dict[str, float], dataset_name: str) -> None:
-    """Show two barplot figures comparing n_it and execution time."""
-    algo_names = ['prim', 'kruskal', 'boruvka']
-    
-    # Extract n_it values
-    n_its = {algo: results[algo][4] for algo in algo_names}
-    
-    # Create figure with 2 subplots side by side
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
-    fig.suptitle(f"{dataset_name} | Algorithm Comparison", fontsize=14)
-    
-    # Barplot 1: n_it
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def union(a, b):
+        ra, rb = find(a), find(b)
+        if ra == rb:
+            return False  # would form cycle
+        if rank[ra] < rank[rb]:
+            ra, rb = rb, ra
+        parent[rb] = ra
+        if rank[ra] == rank[rb]:
+            rank[ra] += 1
+        return True
+
+    # init sets from nodes observed in mst_edges; fallback to 1..n if needed
+    nodes = set()
+    for u, v, _w in mst_edges:
+        nodes.add(u); nodes.add(v)
+
+    if not nodes:
+        nodes = set(range(1, n_nodes + 1))
+
+    for x in nodes:
+        parent[x] = x
+        rank[x] = 0
+
+    for u, v, _w in mst_edges:
+        if not union(u, v):
+            return True
+    return False
+
+
+def show_validation_table(results: dict, dataset_name: str, n_nodes: int) -> None:
+    """
+    Show a table (matplotlib) with:
+      rows: algorithms
+      cols: Optimized, Cycle Presence
+    Optimized: True if all algorithms have the same MST total weight.
+    Cycle Presence: PASS/FAIL check (should be No).
+    Also prints each weight in the Optimized cell.
+    """
+    algos = ["prim", "kruskal", "boruvka"]
+
+    weights = {a: results[a][1] for a in algos}          # total_weight is index 1
+    mst_edges_map = {a: results[a][0] for a in algos}    # mst_edges is index 0
+
+    # optimized criterion: all weights equal
+    all_equal = len(set(weights.values())) == 1
+
+    # cycle check per algorithm
+    has_cycle = {a: _has_cycle_in_undirected_graph(n_nodes, mst_edges_map[a]) for a in algos}
+
+    # Build table content (English)
+    col_labels = ["Optimized", "Cycle Presence"]
+    row_labels = [a.capitalize() for a in algos]
+
+    cell_text = []
+    for a in algos:
+        opt_text = f"{'YES' if all_equal else 'NO'}\n(weight={weights[a]})"
+        cycle_text = "YES" if has_cycle[a] else "NO"
+        cell_text.append([opt_text, cycle_text])
+
+    fig, ax = plt.subplots(figsize=(8, 3.2))
+    ax.axis("off")
+    ax.set_title(f"{dataset_name} | Validation Summary", fontsize=13)
+
+    table = ax.table(
+        cellText=cell_text,
+        rowLabels=row_labels,
+        colLabels=col_labels,
+        cellLoc="center",
+        rowLoc="center",
+        loc="center",
+    )
+
+    table.auto_set_font_size(False)
+    table.set_fontsize(11)
+    table.scale(1, 2.0)
+
+    plt.tight_layout()
+    plt.show()
+
+
+def show_comparison_barplots(results: Dict, exec_times: Dict[str, float], dataset_name: str, m_edges: int) -> None:
+    """
+    2x2 shared plots:
+      (top-left) iterations/phases
+      (top-right) total execution time (ms)
+      (bottom-left) work per accepted edge
+      (bottom-right) time per single accepted edge (ms / (n-1))
+    """
+    algo_names = ["prim", "kruskal", "boruvka"]
     colors = ['#1f77b4', '#ff7f0e', '#2ca02c']
-    bars1 = ax1.bar(algo_names, [n_its[a] for a in algo_names], color=colors, alpha=0.7, edgecolor='black')
-    ax1.set_ylabel('Number of Iterations (n_it)', fontsize=11)
-    ax1.set_title('Iterations per Algorithm', fontsize=12)
-    ax1.grid(axis='y', alpha=0.3)
-    
-    # Add value labels on bars
-    for bar in bars1:
-        height = bar.get_height()
-        ax1.text(bar.get_x() + bar.get_width()/2., height,
-                f'{int(height)}',
-                ha='center', va='bottom', fontsize=10, fontweight='bold')
-    
-    # Barplot 2: execution time (in milliseconds)
+
+    # n_it values (your tuple format: index 4)
+    n_its = {algo: results[algo][4] for algo in algo_names}
+
+    # total time in ms
     exec_times_ms = {algo: exec_times[algo] * 1000 for algo in algo_names}
-    bars2 = ax2.bar(algo_names, [exec_times_ms[a] for a in algo_names], color=colors, alpha=0.7, edgecolor='black')
-    ax2.set_ylabel('Execution Time (ms)', fontsize=11)
-    ax2.set_title('Execution Time per Algorithm', fontsize=12)
-    ax2.grid(axis='y', alpha=0.3)
-    
-    # Add value labels on bars
-    for bar in bars2:
-        height = bar.get_height()
-        ax2.text(bar.get_x() + bar.get_width()/2., height,
-                f'{height:.2f}ms',
-                ha='center', va='bottom', fontsize=10, fontweight='bold')
-    
+
+    # accepted edges (n-1) = len(mst_edges) (index 0)
+    accepted = {algo: len(results[algo][0]) for algo in algo_names}
+
+    # ---- Workload proxies (REAL counters you already have) ----
+    # Prim workload: heap ops
+    prim_op = results["prim"][2]
+    prim_work = prim_op.get("heap_pushes", 0) + prim_op.get("heap_pops", 0)
+
+    # Kruskal workload: scanned edges + UF ops
+    kr_op = results["kruskal"][2]
+    # your kruskal increments n_it once before breaking -> scanned ≈ n_it-1
+    kr_edges_scanned = max(0, results["kruskal"][4] - 1)
+    kr_work = kr_edges_scanned + kr_op.get("find_calls", 0) + kr_op.get("union_calls", 0)
+
+    # Boruvka workload: estimated scans per phase + UF ops
+    bo_op = results["boruvka"][2]
+    phases = results["boruvka"][4]
+    bo_edges_scanned_est = m_edges * phases
+    bo_work = bo_edges_scanned_est + bo_op.get("find_calls", 0) + bo_op.get("union_calls", 0)
+
+    work_total = {
+        "prim": prim_work,
+        "kruskal": kr_work,
+        "boruvka": bo_work,
+    }
+
+    # Work per accepted edge
+    work_per_edge = {a: (work_total[a] / accepted[a] if accepted[a] > 0 else 0.0) for a in algo_names}
+
+    # Time per accepted edge (ms per MST edge)
+    time_per_edge_ms = {a: (exec_times_ms[a] / accepted[a] if accepted[a] > 0 else 0.0) for a in algo_names}
+
+    # ---- Plot 2x2 ----
+    fig, axes = plt.subplots(2, 2, figsize=(14, 9))
+    fig.suptitle(f"{dataset_name} | Shared Comparison", fontsize=14)
+
+    ax1, ax2 = axes[0, 0], axes[0, 1]
+    ax3, ax4 = axes[1, 0], axes[1, 1]
+
+    # (top-left) iterations/phases
+    bars1 = ax1.bar(algo_names, [n_its[a] for a in algo_names], color=colors, alpha=0.7, edgecolor="black")
+    ax1.set_ylabel("n_it (iterations / phases)")
+    ax1.set_title("Iterations / Phases")
+    ax1.grid(axis="y", alpha=0.3)
+    for b in bars1:
+        h = b.get_height()
+        ax1.text(b.get_x() + b.get_width()/2, h, f"{int(h)}", ha="center", va="bottom", fontsize=10, fontweight="bold")
+
+    # (top-right) total time
+    bars2 = ax2.bar(algo_names, [exec_times_ms[a] for a in algo_names], color=colors, alpha=0.7, edgecolor="black")
+    ax2.set_ylabel("Execution time (ms)")
+    ax2.set_title("Total Time")
+    ax2.grid(axis="y", alpha=0.3)
+    for b in bars2:
+        h = b.get_height()
+        ax2.text(b.get_x() + b.get_width()/2, h, f"{h:.2f}ms", ha="center", va="bottom", fontsize=10, fontweight="bold")
+
+    # (bottom-left) work per accepted edge
+    bars3 = ax3.bar(algo_names, [work_per_edge[a] for a in algo_names], color=colors, alpha=0.7, edgecolor="black")
+    ax3.set_ylabel("work / accepted edge")
+    ax3.set_title("Work per Accepted Edge")
+    ax3.grid(axis="y", alpha=0.3)
+    for b in bars3:
+        h = b.get_height()
+        ax3.text(b.get_x() + b.get_width()/2, h, f"{h:.1f}", ha="center", va="bottom", fontsize=10, fontweight="bold")
+
+    # (bottom-right) time per accepted edge
+    bars4 = ax4.bar(algo_names, [time_per_edge_ms[a] for a in algo_names], color=colors, alpha=0.7, edgecolor="black")
+    ax4.set_ylabel("ms / accepted edge")
+    ax4.set_title("Time per Single MST Edge")
+    ax4.grid(axis="y", alpha=0.3)
+    for b in bars4:
+        h = b.get_height()
+        ax4.text(b.get_x() + b.get_width()/2, h, f"{h:.4f}", ha="center", va="bottom", fontsize=10, fontweight="bold")
+
     fig.tight_layout()
     plt.show()
+
+def show_prim_exclusive_plots(results: Dict, dataset_name: str) -> None:
+    """Prim-only: heap behavior (push/pop) + stale pops (lazy overhead)."""
+    mst_edges, total_weight, op_metrics, order_added, n_it, steps = results["prim"]
+    accepted_edges = len(mst_edges)
+    heap_pushes = op_metrics.get("heap_pushes", 0)
+    heap_pops = op_metrics.get("heap_pops", 0)
+    stale_pops = max(0, heap_pops - accepted_edges)  # lazy pops that got discarded
+
+    fig, ax = plt.subplots(figsize=(7, 4))
+    fig.suptitle(f"{dataset_name} | Prim exclusive metrics", fontsize=13)
+
+    labels = ["heap_pushes", "heap_pops", "stale_pops"]
+    values = [heap_pushes, heap_pops, stale_pops]
+    bars = ax.bar(labels, values, edgecolor="black", alpha=0.7)
+
+    ax.set_ylabel("count")
+    ax.set_title("Heap workload (lazy heap overhead)")
+    ax.grid(axis="y", alpha=0.3)
+
+    for b in bars:
+        h = b.get_height()
+        ax.text(b.get_x() + b.get_width() / 2, h, f"{int(h)}", ha="center", va="bottom")
+
+    plt.tight_layout()
+    plt.show()
+
+
+def show_kruskal_exclusive_plots(results: Dict, dataset_name: str) -> None:
+    """Kruskal-only: UF calls + accepted/rejected edges (cycle filtering)."""
+    mst_edges, total_weight, op_metrics, order_added, n_it, steps = results["kruskal"]
+
+    accepted_edges = len(mst_edges)  # should be n-1
+    # In your kruskal.py: n_it increments before the 'done' break, so it can be +1.
+    edges_scanned = max(0, n_it - 1)
+    rejected_edges = max(0, edges_scanned - accepted_edges)
+
+    find_calls = op_metrics.get("find_calls", 0)
+    union_calls = op_metrics.get("union_calls", 0)
+
+    fig, ax = plt.subplots(figsize=(9, 4))
+    fig.suptitle(f"{dataset_name} | Kruskal exclusive metrics", fontsize=13)
+
+    labels = ["edges_scanned", "accepted_edges", "rejected_edges", "find_calls", "union_calls"]
+    values = [edges_scanned, accepted_edges, rejected_edges, find_calls, union_calls]
+    bars = ax.bar(labels, values, edgecolor="black", alpha=0.7)
+
+    ax.set_ylabel("count")
+    ax.set_title("Cycle filtering + Union-Find workload")
+    ax.grid(axis="y", alpha=0.3)
+
+    for b in bars:
+        h = b.get_height()
+        ax.text(b.get_x() + b.get_width() / 2, h, f"{int(h)}", ha="center", va="bottom")
+
+    plt.xticks(rotation=20, ha="right")
+    plt.tight_layout()
+    plt.show()
+
+
+def show_boruvka_exclusive_plots(results: Dict, dataset_name: str, m_edges: int) -> None:
+    """Borůvka-only: phases + edges added per phase + estimated edge scans."""
+    mst_edges, total_weight, op_metrics, order_added, n_it, edges_sequence = results["boruvka"]
+
+    phases = n_it
+    edges_added_per_phase = [len(phase) for phase in edges_sequence]
+    # In your Boruvka implementation, each phase scans all edges once (for u,v,w in edges)
+    edges_scanned_total_est = m_edges * phases
+
+    find_calls = op_metrics.get("find_calls", 0)
+    union_calls = op_metrics.get("union_calls", 0)
+
+    # Figure 1: edges added per phase (line)
+    fig, ax = plt.subplots(figsize=(8, 4))
+    fig.suptitle(f"{dataset_name} | Borůvka exclusive metrics", fontsize=13)
+
+    ax.plot(range(1, len(edges_added_per_phase) + 1), edges_added_per_phase, marker="o")
+    ax.set_xlabel("phase")
+    ax.set_ylabel("edges added")
+    ax.set_title("Edges added per phase (parallel additions)")
+    ax.grid(alpha=0.3)
+    plt.tight_layout()
+    plt.show()
+
+    # Figure 2: summary bar
+    fig, ax = plt.subplots(figsize=(9, 4))
+    labels = ["phases", "edges_scanned_est", "find_calls", "union_calls"]
+    values = [phases, edges_scanned_total_est, find_calls, union_calls]
+    bars = ax.bar(labels, values, edgecolor="black", alpha=0.7)
+
+    ax.set_ylabel("count")
+    ax.set_title("Phase count + estimated scan cost + UF workload")
+    ax.grid(axis="y", alpha=0.3)
+
+    for b in bars:
+        h = b.get_height()
+        ax.text(b.get_x() + b.get_width() / 2, h, f"{int(h)}", ha="center", va="bottom")
+
+    plt.tight_layout()
+    plt.show()
+
 
 
 def main():
@@ -326,10 +570,25 @@ def main():
     # Launch interactive comparison
     visualizer = InteractiveMSTComparison(inst.coords, results, inst.name)
     visualizer.show()
+
+    # After closing interactive graph viewer, show validation table
+    show_validation_table(results, inst.name, n_nodes=inst.dimension)
+
     
-    # After closing interactive viewer, show comparison barplots
-    print("Showing comparison barplots...")
-    show_comparison_barplots(results, exec_times, inst.name)
+    # After closing interactive viewer, show shared comparison barplots
+    print("Showing shared comparison barplots...")
+    show_comparison_barplots(results, exec_times, inst.name, m_edges=len(edges))
+
+
+    # After closing shared plots, show exclusive plots per algorithm (one window sequence)
+    print("Showing Prim-only plots...")
+    show_prim_exclusive_plots(results, inst.name)
+
+    print("Showing Kruskal-only plots...")
+    show_kruskal_exclusive_plots(results, inst.name)
+
+    print("Showing Borůvka-only plots...")
+    show_boruvka_exclusive_plots(results, inst.name, m_edges=len(edges))
 
 
 if __name__ == "__main__":
