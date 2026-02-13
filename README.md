@@ -1,4 +1,4 @@
-# Minimum Spanning Tree – Prim vs Kruskal vs Borůvka
+# Design of a Minimum Infrastructure Network Among Cities: A Comparative Study of Prim, Kruskal, and Borůvka Algorithms
 
 <p align="center">
   <img src="images/pr76.png" width="700">
